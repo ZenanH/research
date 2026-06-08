@@ -31,3 +31,27 @@ func TestSemanticScholarAbstractUsesAPIKey(t *testing.T) {
 		t.Fatalf("x-api-key = %q", gotKey)
 	}
 }
+
+func TestSemanticScholarAbstractAllowsAnonymousAccess(t *testing.T) {
+	var gotKey string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotKey = r.Header.Get("x-api-key")
+		_, _ = w.Write([]byte(`{"abstract":"Anonymous abstract."}`))
+	}))
+	defer server.Close()
+
+	client := &SemanticScholarClient{
+		BaseURL:    server.URL,
+		HTTPClient: server.Client(),
+	}
+	got, err := client.Abstract(context.Background(), "10.1000/example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "Anonymous abstract." {
+		t.Fatalf("Abstract() = %q", got)
+	}
+	if gotKey != "" {
+		t.Fatalf("x-api-key = %q, want empty", gotKey)
+	}
+}

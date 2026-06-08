@@ -11,13 +11,15 @@ import (
 )
 
 const (
-	EnvOpenAlexAPIKey = "OPENALEX_API_KEY"
+	EnvOpenAlexAPIKey        = "OPENALEX_API_KEY"
+	EnvSemanticScholarAPIKey = "SEMANTIC_SCHOLAR_API_KEY"
 )
 
 type Config struct {
-	OpenAlexAPIKey string
-	DefaultDir     string
-	ExportMode     string
+	OpenAlexAPIKey        string
+	SemanticScholarAPIKey string
+	DefaultDir            string
+	ExportMode            string
 }
 
 func Default() Config {
@@ -63,6 +65,8 @@ func Load() (Config, string, error) {
 		switch section + "." + key {
 		case "openalex.api_key":
 			cfg.OpenAlexAPIKey = value
+		case "semantic_scholar.api_key":
+			cfg.SemanticScholarAPIKey = value
 		case "output.default_dir":
 			cfg.DefaultDir = value
 		case "export.mode":
@@ -86,12 +90,15 @@ func Save(cfg Config) (string, error) {
 	content := fmt.Sprintf(`[openalex]
 api_key = "%s"
 
+[semantic_scholar]
+api_key = "%s"
+
 [output]
 default_dir = "%s"
 
 [export]
 mode = "%s"
-`, escapeTOML(cfg.OpenAlexAPIKey), escapeTOML(cfg.DefaultDir), escapeTOML(cfg.ExportMode))
+`, escapeTOML(cfg.OpenAlexAPIKey), escapeTOML(cfg.SemanticScholarAPIKey), escapeTOML(cfg.DefaultDir), escapeTOML(cfg.ExportMode))
 	return path, os.WriteFile(path, []byte(content), 0o600)
 }
 
@@ -103,6 +110,16 @@ func ResolveOpenAlexKey(cliKey string, cfg Config) string {
 		return env
 	}
 	return strings.TrimSpace(cfg.OpenAlexAPIKey)
+}
+
+func ResolveSemanticScholarKey(cliKey string, cfg Config) string {
+	if strings.TrimSpace(cliKey) != "" {
+		return strings.TrimSpace(cliKey)
+	}
+	if env := strings.TrimSpace(os.Getenv(EnvSemanticScholarAPIKey)); env != "" {
+		return env
+	}
+	return strings.TrimSpace(cfg.SemanticScholarAPIKey)
 }
 
 func Path() (string, error) {

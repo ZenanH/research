@@ -76,8 +76,8 @@ func (a App) runJournal(ctx context.Context, args []string) error {
 	count := fs.Int("count", 25, "number of papers")
 	output := fs.String("output", "", "output Markdown path")
 	openAlexKey := fs.String("openalex-key", "", "OpenAlex API key")
-	requireAbstract := fs.Bool("require-abstract", false, "only export papers with OpenAlex abstracts")
-	enrichAbstracts := fs.Bool("enrich-abstracts", true, "enrich missing abstracts with Crossref and Semantic Scholar when configured")
+	requireAbstract := fs.Bool("require-abstract", false, "only export papers with abstracts from available sources")
+	enrichAbstracts := fs.Bool("enrich-abstracts", true, "enrich missing abstracts with Crossref and Semantic Scholar")
 	semanticScholarKey := fs.String("semantic-scholar-key", "", "Semantic Scholar API key")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -91,9 +91,12 @@ func (a App) runJournal(ctx context.Context, args []string) error {
 	if *count <= 0 {
 		return errors.New("journal --count must be greater than 0")
 	}
-	if *output == "" {
-		*output = exporter.DefaultFilename(*name, fmt.Sprintf("recent_%d", *count))
+	defaultDir := defaultOutputDir()
+	resolvedOutput, err := exporter.ResolveOutputPath(*output, *name, "recent", *count, defaultDir)
+	if err != nil {
+		return err
 	}
+	*output = resolvedOutput
 	key, err := a.requireKey(*openAlexKey)
 	if err != nil {
 		return err
@@ -133,8 +136,8 @@ func (a App) runSearch(ctx context.Context, args []string) error {
 	keywordMode := fs.String("keyword-mode", "any", "keyword mode: any or all")
 	output := fs.String("output", "", "output Markdown path")
 	openAlexKey := fs.String("openalex-key", "", "OpenAlex API key")
-	requireAbstract := fs.Bool("require-abstract", false, "only export papers with OpenAlex abstracts")
-	enrichAbstracts := fs.Bool("enrich-abstracts", true, "enrich missing abstracts with Crossref and Semantic Scholar when configured")
+	requireAbstract := fs.Bool("require-abstract", false, "only export papers with abstracts from available sources")
+	enrichAbstracts := fs.Bool("enrich-abstracts", true, "enrich missing abstracts with Crossref and Semantic Scholar")
 	semanticScholarKey := fs.String("semantic-scholar-key", "", "Semantic Scholar API key")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -155,9 +158,12 @@ func (a App) runSearch(ctx context.Context, args []string) error {
 	if *keywordMode != "any" && *keywordMode != "all" {
 		return errors.New("search --keyword-mode must be any or all")
 	}
-	if *output == "" {
-		*output = exporter.DefaultFilename(*journal, "keywords")
+	defaultDir := defaultOutputDir()
+	resolvedOutput, err := exporter.ResolveOutputPath(*output, *journal, "keyword", *count, defaultDir)
+	if err != nil {
+		return err
 	}
+	*output = resolvedOutput
 	key, err := a.requireKey(*openAlexKey)
 	if err != nil {
 		return err
@@ -194,9 +200,15 @@ func (a App) runSearch(ctx context.Context, args []string) error {
 
 func (a App) enrichAndFilter(ctx context.Context, papers []model.Paper, enabled bool, semanticScholarKey string, requireAbstract bool) []model.Paper {
 	if enabled {
+		cfg, _, err := config.Load()
+		if err == nil {
+			semanticScholarKey = config.ResolveSemanticScholarKey(semanticScholarKey, cfg)
+		} else {
+			semanticScholarKey = firstNonEmpty(semanticScholarKey, os.Getenv(config.EnvSemanticScholarAPIKey))
+		}
 		fmt.Fprintf(a.Stdout, "Enriching missing abstracts...\n")
 		enricher := abstracts.NewEnricher(abstracts.Options{
-			SemanticScholarKey: firstNonEmpty(semanticScholarKey, os.Getenv(abstracts.EnvSemanticScholarAPIKey)),
+			SemanticScholarKey: semanticScholarKey,
 		})
 		papers = enricher.Enrich(ctx, papers)
 	}
@@ -255,40 +267,74 @@ func (a App) runConfig(args []string) error {
 	if len(args) == 0 {
 		fmt.Fprintf(a.Stdout, "Config path: %s\n", path)
 		fmt.Fprintf(a.Stdout, "OpenAlex API key: %s\n", maskedKey(cfg.OpenAlexAPIKey))
+		fmt.Fprintf(a.Stdout, "Semantic Scholar API key: %s\n", maskedKey(cfg.SemanticScholarAPIKey))
 		fmt.Fprintf(a.Stdout, "Default output dir: %s\n", cfg.DefaultDir)
 		fmt.Fprintf(a.Stdout, "Export mode: %s\n", cfg.ExportMode)
 		return nil
 	}
 	switch args[0] {
 	case "set":
-		if len(args) < 2 || args[1] != "openalex-key" {
-			return errors.New("usage: research config set openalex-key")
+		if len(args) < 2 {
+			return errors.New("usage: research config set openalex-key|semantic-scholar-key")
 		}
-		key, err := tui.PromptSecret(a.Stdin, a.Stdout, "Enter OpenAlex API key")
-		if err != nil {
-			return err
+		switch args[1] {
+		case "openalex-key":
+			key, err := tui.PromptSecret(a.Stdin, a.Stdout, "Enter OpenAlex API key")
+			if err != nil {
+				return err
+			}
+			cfg.OpenAlexAPIKey = strings.TrimSpace(key)
+			if cfg.OpenAlexAPIKey == "" {
+				return errors.New("OpenAlex API key cannot be empty")
+			}
+			path, err := config.Save(cfg)
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(a.Stdout, "Saved OpenAlex API key to %s\n", path)
+			return nil
+		case "semantic-scholar-key":
+			key, err := tui.PromptSecret(a.Stdin, a.Stdout, "Enter Semantic Scholar API key")
+			if err != nil {
+				return err
+			}
+			cfg.SemanticScholarAPIKey = strings.TrimSpace(key)
+			if cfg.SemanticScholarAPIKey == "" {
+				return errors.New("Semantic Scholar API key cannot be empty")
+			}
+			path, err := config.Save(cfg)
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(a.Stdout, "Saved Semantic Scholar API key to %s\n", path)
+			return nil
+		default:
+			return errors.New("usage: research config set openalex-key|semantic-scholar-key")
 		}
-		cfg.OpenAlexAPIKey = strings.TrimSpace(key)
-		if cfg.OpenAlexAPIKey == "" {
-			return errors.New("OpenAlex API key cannot be empty")
-		}
-		path, err := config.Save(cfg)
-		if err != nil {
-			return err
-		}
-		fmt.Fprintf(a.Stdout, "Saved OpenAlex API key to %s\n", path)
-		return nil
 	case "unset":
-		if len(args) < 2 || args[1] != "openalex-key" {
-			return errors.New("usage: research config unset openalex-key")
+		if len(args) < 2 {
+			return errors.New("usage: research config unset openalex-key|semantic-scholar-key")
 		}
-		cfg.OpenAlexAPIKey = ""
-		path, err := config.Save(cfg)
-		if err != nil {
-			return err
+		switch args[1] {
+		case "openalex-key":
+			cfg.OpenAlexAPIKey = ""
+			path, err := config.Save(cfg)
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(a.Stdout, "Removed OpenAlex API key from %s\n", path)
+			return nil
+		case "semantic-scholar-key":
+			cfg.SemanticScholarAPIKey = ""
+			path, err := config.Save(cfg)
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(a.Stdout, "Removed Semantic Scholar API key from %s\n", path)
+			return nil
+		default:
+			return errors.New("usage: research config unset openalex-key|semantic-scholar-key")
 		}
-		fmt.Fprintf(a.Stdout, "Removed OpenAlex API key from %s\n", path)
-		return nil
 	default:
 		return fmt.Errorf("unknown config command %q", args[0])
 	}
@@ -322,7 +368,10 @@ func writeResult(path string, opts exporter.ExportOptions, papers []model.Paper,
 	if err := exporter.WriteCombined(path, opts, papers); err != nil {
 		return err
 	}
+	summary := exporter.SummarizeAbstracts(papers)
 	fmt.Fprintf(out, "Done. Retrieved %d papers: %s\n", len(papers), path)
+	fmt.Fprintf(out, "Abstract coverage: %s (%d/%d)\n", summary.Coverage, summary.WithAbstracts, summary.Total)
+	fmt.Fprintf(out, "Abstract sources: %s\n", exporter.FormatAbstractSourceCounts(summary.SourceCounts))
 	return nil
 }
 
@@ -365,6 +414,14 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
+func defaultOutputDir() string {
+	cfg, _, err := config.Load()
+	if err != nil {
+		return config.Default().DefaultDir
+	}
+	return cfg.DefaultDir
+}
+
 func printHelp(out io.Writer) {
 	fmt.Fprint(out, `Research
 OpenAlex journal paper exporter
@@ -376,13 +433,15 @@ Usage:
   research sources "computers and geotechnics"
   research config
   research config set openalex-key
+  research config set semantic-scholar-key
   research config unset openalex-key
+  research config unset semantic-scholar-key
 
 Options:
   --openalex-key string  OpenAlex API key. If omitted, research checks OPENALEX_API_KEY and local config.
-  --enrich-abstracts    Enrich missing abstracts with Crossref and Semantic Scholar when configured. Enabled by default.
-  --require-abstract    Only export papers with abstracts available from configured sources.
-  --semantic-scholar-key string  Semantic Scholar API key. If omitted, research checks SEMANTIC_SCHOLAR_API_KEY.
+  --enrich-abstracts    Enrich missing abstracts with Crossref and Semantic Scholar. Enabled by default.
+  --require-abstract    Only export papers with abstracts available from OpenAlex, Crossref, or Semantic Scholar.
+  --semantic-scholar-key string  Semantic Scholar API key. If omitted, research checks SEMANTIC_SCHOLAR_API_KEY and local config, then uses anonymous access.
   --version             Show version.
 `)
 }

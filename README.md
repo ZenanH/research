@@ -8,7 +8,7 @@ The first MVP focuses on one reliable workflow:
 - fetch recent journal articles
 - optionally filter by keywords in title and abstract
 - rebuild OpenAlex inverted-index abstracts
-- enrich missing abstracts from Crossref, and from Semantic Scholar when configured
+- enrich missing abstracts from Crossref, then Semantic Scholar with a configured key or anonymous access
 - export one combined Markdown file for downstream AI literature review
 
 ## Install From Source
@@ -46,7 +46,28 @@ Config locations:
 - Linux: `~/.config/research/config.toml`
 - Windows: `%AppData%\research\config.toml`
 
-Semantic Scholar enrichment is optional. If you want `research` to use Semantic Scholar as a second abstract fallback after Crossref, set:
+Semantic Scholar enrichment is optional. `research` can use Semantic Scholar as a second abstract fallback after Crossref. A key is recommended for better rate limits, but not required; if no key is configured, enrichment falls back to anonymous public access.
+
+`research` looks for the Semantic Scholar key in this order:
+
+1. `--semantic-scholar-key`
+2. `SEMANTIC_SCHOLAR_API_KEY`
+3. local config file
+4. interactive prompt, where pressing Enter uses anonymous access
+
+You can save a key explicitly:
+
+```bash
+research config set semantic-scholar-key
+```
+
+You can remove it:
+
+```bash
+research config unset semantic-scholar-key
+```
+
+Or set it for one shell session:
 
 ```bash
 export SEMANTIC_SCHOLAR_API_KEY="..."
@@ -78,27 +99,27 @@ Export recent papers from a journal:
 research journal \
   --name "computers and geotechnics" \
   --count 100 \
-  --output ./computers_and_geotechnics_recent_100.md
+  --output ./research-outputs
 ```
 
-By default, missing abstracts are enriched from Crossref. If `SEMANTIC_SCHOLAR_API_KEY` is set, Semantic Scholar is used after Crossref:
+By default, missing abstracts are enriched from Crossref, then Semantic Scholar. If no Semantic Scholar key is configured, the CLI uses anonymous public access with lower rate limits:
 
 ```bash
 research journal \
   --name "computers and geotechnics" \
   --count 100 \
   --enrich-abstracts \
-  --output ./computers_and_geotechnics_recent_100.md
+  --output ./research-outputs
 ```
 
-Only export papers that have abstracts available from configured sources:
+Only export papers that have abstracts available from OpenAlex, Crossref, or Semantic Scholar:
 
 ```bash
 research journal \
   --name "computers and geotechnics" \
   --count 100 \
   --require-abstract \
-  --output ./computers_and_geotechnics_recent_100_with_abstracts.md
+  --output ./research-outputs
 ```
 
 Disable enrichment when you only want OpenAlex-native abstracts:
@@ -120,8 +141,17 @@ research search \
   --count 100 \
   --keywords "machine learning,DEM,slope stability" \
   --keyword-mode any \
-  --output ./computers_and_geotechnics_keywords_100.md
+  --output ./research-outputs
 ```
+
+`--output` can be either a Markdown file path or a directory. When it is omitted or points to a directory, `research` writes into the configured default output directory and generates a short filename from the journal abbreviation and requested count:
+
+```text
+./research-outputs/cag_100.md
+./research-outputs/cag_keywords_100.md
+```
+
+If the target file already exists, `research` keeps the old file and writes to the next available name, such as `cag_100_2.md`.
 
 List source candidates:
 
@@ -177,13 +207,13 @@ The default output is one combined Markdown file:
 ...
 ```
 
-If configured sources do not provide an abstract, the exporter writes:
+If available sources do not provide an abstract, the exporter writes:
 
 ```md
-_No abstract available from configured sources._
+_No abstract available from available sources._
 ```
 
-OpenAlex does not have abstracts for every paper. The Markdown metadata includes `Papers with abstracts`, `Abstract coverage`, and `Abstract sources` so you can quickly judge whether an export is suitable for AI-assisted reading. Use `--require-abstract` when you want the CLI to skip papers without abstracts from configured sources and continue paging until it collects the requested count or OpenAlex has no more matching results.
+OpenAlex does not have abstracts for every paper. The Markdown metadata includes `Papers with abstracts`, `Abstract coverage`, and `Abstract sources` so you can quickly judge whether an export is suitable for AI-assisted reading. Use `--require-abstract` when you want the CLI to skip papers without abstracts from OpenAlex, Crossref, or Semantic Scholar and continue paging until it collects the requested count or OpenAlex has no more matching results.
 
 ## Development
 

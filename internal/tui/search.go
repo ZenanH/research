@@ -3,7 +3,6 @@ package tui
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -12,7 +11,7 @@ import (
 	"github.com/ZenanH/research/internal/openalex"
 )
 
-func RunSearch(ctx context.Context, opts Options, key string) error {
+func RunSearch(ctx context.Context, opts Options, key string, semanticScholarKey string, defaultDir string) error {
 	screen(opts.Out, "Keyword Search", "Export recent journal articles matching title or abstract keywords")
 	journal, err := PromptLine(opts.In, opts.Out, "Journal name", "Computers and Geotechnics")
 	if err != nil {
@@ -47,7 +46,17 @@ func RunSearch(ctx context.Context, opts Options, key string) error {
 	if err != nil {
 		return err
 	}
-	output, err := PromptLine(opts.In, opts.Out, "Output path", defaultOutput(journal, "keywords"))
+	if enrichAbstracts {
+		semanticScholarKey, err = ensureSemanticScholarKey(opts.In, opts.Out, semanticScholarKey)
+		if err != nil {
+			return err
+		}
+	}
+	output, err := PromptLine(opts.In, opts.Out, "Output path", defaultOutput(journal, "keyword", count, defaultDir))
+	if err != nil {
+		return err
+	}
+	output, err = exporter.ResolveOutputPath(output, journal, "keyword", count, defaultDir)
 	if err != nil {
 		return err
 	}
@@ -94,7 +103,7 @@ func RunSearch(ctx context.Context, opts Options, key string) error {
 	if enrichAbstracts {
 		status(opts.Out, "Enriching missing abstracts...")
 		enricher := abstracts.NewEnricher(abstracts.Options{
-			SemanticScholarKey: os.Getenv(abstracts.EnvSemanticScholarAPIKey),
+			SemanticScholarKey: semanticScholarKey,
 		})
 		papers = enricher.Enrich(ctx, papers)
 	}
@@ -114,7 +123,10 @@ func RunSearch(ctx context.Context, opts Options, key string) error {
 	}, papers); err != nil {
 		return err
 	}
+	summary := exporter.SummarizeAbstracts(papers)
 	status(opts.Out, fmt.Sprintf("Done. Retrieved %d papers: %s", len(papers), output))
+	status(opts.Out, fmt.Sprintf("Abstract coverage: %s (%d/%d)", summary.Coverage, summary.WithAbstracts, summary.Total))
+	status(opts.Out, "Abstract sources: "+exporter.FormatAbstractSourceCounts(summary.SourceCounts))
 	return nil
 }
 

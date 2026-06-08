@@ -3,7 +3,6 @@ package tui
 import (
 	"context"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/ZenanH/research/internal/abstracts"
@@ -11,7 +10,7 @@ import (
 	"github.com/ZenanH/research/internal/openalex"
 )
 
-func RunJournal(ctx context.Context, opts Options, key string) error {
+func RunJournal(ctx context.Context, opts Options, key string, semanticScholarKey string, defaultDir string) error {
 	screen(opts.Out, "Recent Papers", "Export the latest OpenAlex journal articles to Markdown")
 	journal, err := PromptLine(opts.In, opts.Out, "Journal name", "Computers and Geotechnics")
 	if err != nil {
@@ -30,7 +29,17 @@ func RunJournal(ctx context.Context, opts Options, key string) error {
 	if err != nil {
 		return err
 	}
-	output, err := PromptLine(opts.In, opts.Out, "Output path", defaultOutput(journal, fmt.Sprintf("recent_%d", count)))
+	if enrichAbstracts {
+		semanticScholarKey, err = ensureSemanticScholarKey(opts.In, opts.Out, semanticScholarKey)
+		if err != nil {
+			return err
+		}
+	}
+	output, err := PromptLine(opts.In, opts.Out, "Output path", defaultOutput(journal, "recent", count, defaultDir))
+	if err != nil {
+		return err
+	}
+	output, err = exporter.ResolveOutputPath(output, journal, "recent", count, defaultDir)
 	if err != nil {
 		return err
 	}
@@ -75,7 +84,7 @@ func RunJournal(ctx context.Context, opts Options, key string) error {
 	if enrichAbstracts {
 		status(opts.Out, "Enriching missing abstracts...")
 		enricher := abstracts.NewEnricher(abstracts.Options{
-			SemanticScholarKey: os.Getenv(abstracts.EnvSemanticScholarAPIKey),
+			SemanticScholarKey: semanticScholarKey,
 		})
 		papers = enricher.Enrich(ctx, papers)
 	}
@@ -93,6 +102,9 @@ func RunJournal(ctx context.Context, opts Options, key string) error {
 	}, papers); err != nil {
 		return err
 	}
+	summary := exporter.SummarizeAbstracts(papers)
 	status(opts.Out, fmt.Sprintf("Done. Retrieved %d papers: %s", len(papers), output))
+	status(opts.Out, fmt.Sprintf("Abstract coverage: %s (%d/%d)", summary.Coverage, summary.WithAbstracts, summary.Total))
+	status(opts.Out, "Abstract sources: "+exporter.FormatAbstractSourceCounts(summary.SourceCounts))
 	return nil
 }

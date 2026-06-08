@@ -29,6 +29,40 @@ func TestEnricherUsesCrossrefForMissingAbstracts(t *testing.T) {
 	}
 }
 
+func TestEnricherUsesAnonymousSemanticScholarFallback(t *testing.T) {
+	crossref := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.NotFound(w, r)
+	}))
+	defer crossref.Close()
+
+	var gotKey string
+	semanticScholar := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotKey = r.Header.Get("x-api-key")
+		_, _ = w.Write([]byte(`{"abstract":"Semantic Scholar fallback."}`))
+	}))
+	defer semanticScholar.Close()
+
+	enricher := &Enricher{
+		Crossref: &CrossrefClient{BaseURL: crossref.URL, HTTPClient: crossref.Client()},
+		SemanticScholar: &SemanticScholarClient{
+			BaseURL:    semanticScholar.URL,
+			HTTPClient: semanticScholar.Client(),
+		},
+	}
+	papers := enricher.Enrich(context.Background(), []model.Paper{
+		{DOI: "10.1000/example", AbstractSource: model.AbstractSourceMissing},
+	})
+	if papers[0].Abstract != "Semantic Scholar fallback." {
+		t.Fatalf("abstract = %q", papers[0].Abstract)
+	}
+	if papers[0].AbstractSource != model.AbstractSourceSemanticScholar {
+		t.Fatalf("source = %q", papers[0].AbstractSource)
+	}
+	if gotKey != "" {
+		t.Fatalf("x-api-key = %q, want empty", gotKey)
+	}
+}
+
 func TestFilterWithAbstracts(t *testing.T) {
 	papers := FilterWithAbstracts([]model.Paper{
 		{DisplayName: "missing"},

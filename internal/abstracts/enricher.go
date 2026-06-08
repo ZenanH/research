@@ -9,8 +9,6 @@ import (
 	"github.com/ZenanH/research/internal/model"
 )
 
-const EnvSemanticScholarAPIKey = "SEMANTIC_SCHOLAR_API_KEY"
-
 type Enricher struct {
 	Crossref        *CrossrefClient
 	SemanticScholar *SemanticScholarClient
@@ -55,7 +53,7 @@ func (e *Enricher) Enrich(ctx context.Context, papers []model.Paper) []model.Pap
 				continue
 			}
 		}
-		if e.SemanticScholar != nil && strings.TrimSpace(e.SemanticScholar.APIKey) != "" {
+		if e.SemanticScholar != nil {
 			if abstract, err := e.SemanticScholar.Abstract(ctx, doi); err == nil && strings.TrimSpace(abstract) != "" {
 				papers[i].Abstract = abstract
 				papers[i].AbstractSource = model.AbstractSourceSemanticScholar

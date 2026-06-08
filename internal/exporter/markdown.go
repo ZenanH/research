@@ -23,6 +23,13 @@ type ExportOptions struct {
 	GeneratedAt    time.Time
 }
 
+type AbstractSummary struct {
+	Total         int
+	WithAbstracts int
+	Coverage      string
+	SourceCounts  map[string]int
+}
+
 func WriteCombined(path string, opts ExportOptions, papers []model.Paper) error {
 	content := CombinedMarkdown(opts, papers)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil && filepath.Dir(path) != "." {
@@ -49,10 +56,10 @@ func CombinedMarkdown(opts ExportOptions, papers []model.Paper) string {
 	fmt.Fprintf(&buf, "- ISSN: %s\n", escapeMD(emptyAsNA(strings.Join(opts.Source.ISSN, ", "))))
 	fmt.Fprintf(&buf, "- Requested count: %d\n", opts.RequestedCount)
 	fmt.Fprintf(&buf, "- Retrieved count: %d\n", len(papers))
-	abstractCount := papersWithAbstracts(papers)
-	fmt.Fprintf(&buf, "- Papers with abstracts: %d\n", abstractCount)
-	fmt.Fprintf(&buf, "- Abstract coverage: %s\n", percent(abstractCount, len(papers)))
-	fmt.Fprintf(&buf, "- Abstract sources: %s\n", escapeMD(formatSourceCounts(abstractSourceCounts(papers))))
+	summary := SummarizeAbstracts(papers)
+	fmt.Fprintf(&buf, "- Papers with abstracts: %d\n", summary.WithAbstracts)
+	fmt.Fprintf(&buf, "- Abstract coverage: %s\n", summary.Coverage)
+	fmt.Fprintf(&buf, "- Abstract sources: %s\n", escapeMD(FormatAbstractSourceCounts(summary.SourceCounts)))
 	fmt.Fprintf(&buf, "- Query type: %s\n", escapeMD(opts.QueryType))
 	buf.WriteString("- Sort: publication_date:desc\n")
 	fmt.Fprintf(&buf, "- Generated at: %s\n\n", opts.GeneratedAt.Format(time.RFC3339))
@@ -86,7 +93,7 @@ func CombinedMarkdown(opts ExportOptions, papers []model.Paper) string {
 		fmt.Fprintf(&buf, "- Publisher page: %s\n\n", escapeMD(emptyAsNA(paper.LandingPageURL)))
 		buf.WriteString("#### Abstract\n\n")
 		if strings.TrimSpace(paper.Abstract) == "" {
-			buf.WriteString("_No abstract available from configured sources._\n\n")
+			buf.WriteString("_No abstract available from available sources._\n\n")
 		} else {
 			fmt.Fprintf(&buf, "%s\n\n", strings.TrimSpace(paper.Abstract))
 		}
@@ -114,6 +121,16 @@ func papersWithAbstracts(papers []model.Paper) int {
 	return count
 }
 
+func SummarizeAbstracts(papers []model.Paper) AbstractSummary {
+	withAbstracts := papersWithAbstracts(papers)
+	return AbstractSummary{
+		Total:         len(papers),
+		WithAbstracts: withAbstracts,
+		Coverage:      percent(withAbstracts, len(papers)),
+		SourceCounts:  abstractSourceCounts(papers),
+	}
+}
+
 func abstractSourceCounts(papers []model.Paper) map[string]int {
 	counts := map[string]int{
 		model.AbstractSourceOpenAlex:        0,
@@ -127,7 +144,7 @@ func abstractSourceCounts(papers []model.Paper) map[string]int {
 	return counts
 }
 
-func formatSourceCounts(counts map[string]int) string {
+func FormatAbstractSourceCounts(counts map[string]int) string {
 	parts := []string{
 		fmt.Sprintf("OpenAlex %d", counts[model.AbstractSourceOpenAlex]),
 		fmt.Sprintf("Crossref %d", counts[model.AbstractSourceCrossref]),

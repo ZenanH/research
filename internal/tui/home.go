@@ -29,6 +29,7 @@ func Run(ctx context.Context, opts Options) error {
 	screen(opts.Out, "Research", "OpenAlex journal paper exporter")
 
 	key := config.ResolveOpenAlexKey("", cfg)
+	semanticScholarKey := config.ResolveSemanticScholarKey("", cfg)
 	if key == "" {
 		screen(opts.Out, "OpenAlex API key required", "OpenAlex is free, but current API access requires a free API key.")
 		fmt.Fprintln(opts.Out, "Get one at: https://openalex.org/settings/api")
@@ -67,13 +68,14 @@ func Run(ctx context.Context, opts Options) error {
 		}
 		switch strings.TrimSpace(choice) {
 		case "1":
-			return RunJournal(ctx, opts, key)
+			return RunJournal(ctx, opts, key, semanticScholarKey, cfg.DefaultDir)
 		case "2":
-			return RunSearch(ctx, opts, key)
+			return RunSearch(ctx, opts, key, semanticScholarKey, cfg.DefaultDir)
 		case "3":
 			screen(opts.Out, "Settings", "Local configuration")
 			fmt.Fprintf(opts.Out, "Config path: %s\n", path)
 			fmt.Fprintf(opts.Out, "OpenAlex API key: %s\n", maskedKey(cfg.OpenAlexAPIKey))
+			fmt.Fprintf(opts.Out, "Semantic Scholar API key: %s\n", maskedKey(cfg.SemanticScholarAPIKey))
 			fmt.Fprintf(opts.Out, "Default output dir: %s\n", cfg.DefaultDir)
 			fmt.Fprintf(opts.Out, "Export mode: %s\n\n", cfg.ExportMode)
 			_, _ = PromptLine(opts.In, opts.Out, "Press Enter to return", "")
@@ -86,8 +88,12 @@ func Run(ctx context.Context, opts Options) error {
 	}
 }
 
-func defaultOutput(journal string, suffix string) string {
-	return exporter.DefaultFilename(journal, suffix)
+func defaultOutput(journal string, queryType string, count int, defaultDir string) string {
+	path, err := exporter.ResolveOutputPath("", journal, queryType, count, defaultDir)
+	if err != nil {
+		return exporter.DefaultFilename(journal, fmt.Sprintf("%s_%d", queryType, count))
+	}
+	return path
 }
 
 func maskedKey(key string) string {
