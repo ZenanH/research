@@ -1,0 +1,29 @@
+{
+  "meta": {
+    "next_cursor": ""
+  },
+  "results": [
+    {
+      "id": "https://openalex.org/W123",
+      "doi": "https://doi.org/10.1016/example",
+      "display_name": "Machine learning for geotechnical engineering",
+      "publication_date": "2026-01-01",
+      "abstract_inverted_index": {
+        "Machine": [0],
+        "learning": [1],
+        "abstract": [2]
+      },
+      "authorships": [
+        {
+          "author": {
+            "display_name": "Ada Lovelace"
+          }
+        }
+      ],
+      "primary_location": {
+        "landing_page_url": "https://example.org/paper"
+      }
+    }
+  ]
+}
+

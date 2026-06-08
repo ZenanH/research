@@ -1,0 +1,57 @@
+version: 2
+
+project_name: research
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: research
+    main: ./cmd/research
+    binary: research
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+
+archives:
+  - id: research
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+
+checksum:
+  name_template: checksums.txt
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+
+brews:
+  - name: research
+    repository:
+      owner: ZenanH
+      name: homebrew-research
+    homepage: https://github.com/ZenanH/research
+    description: Fetch OpenAlex journal papers and export AI-friendly Markdown
+    license: MIT
+    test: |
+      system "#{bin}/research", "--version"
+
