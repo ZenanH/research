@@ -163,3 +163,38 @@ gofmt -w .
 
 This MVP intentionally uses only the Go standard library. The project plan recommends Cobra and Charm TUI packages for a richer future UI; the current internal package boundaries are designed so that those can be introduced later without rewriting the OpenAlex or export layers.
 
+## Release Setup
+
+GitHub Releases use the built-in `GITHUB_TOKEN` provided by GitHub Actions. You do not need to create a repository secret named `GITHUB_TOKEN`.
+
+Homebrew tap updates write to a separate repository:
+
+```text
+ZenanH/homebrew-research
+```
+
+Create that repository before the first tagged release. Then create a fine-grained GitHub Personal Access Token with access to `ZenanH/homebrew-research` and these permissions:
+
+```text
+Contents: Read and write
+Metadata: Read
+```
+
+Add the token to the main `ZenanH/research` repository:
+
+```text
+Settings -> Secrets and variables -> Actions -> New repository secret
+```
+
+Use this secret name:
+
+```text
+HOMEBREW_TAP_GITHUB_TOKEN
+```
+
+After that, push a tag to publish:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```

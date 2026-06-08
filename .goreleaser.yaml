@@ -49,9 +49,9 @@ brews:
     repository:
       owner: ZenanH
       name: homebrew-research
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     homepage: https://github.com/ZenanH/research
     description: Fetch OpenAlex journal papers and export AI-friendly Markdown
     license: MIT
     test: |
       system "#{bin}/research", "--version"
-
