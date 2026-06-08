@@ -34,7 +34,11 @@ func TestCombinedMarkdownIncludesMetadataAndMissingAbstract(t *testing.T) {
 		"# Computers and Geotechnics: Recent 1 Papers",
 		"- Source: OpenAlex",
 		"- Retrieved count: 1",
-		"_No abstract available from OpenAlex._",
+		"- Papers with abstracts: 0",
+		"- Abstract coverage: 0.0%",
+		"- Abstract sources: OpenAlex 0, Crossref 0, Semantic Scholar 0, Missing 1",
+		"- Abstract source: Missing",
+		"_No abstract available from configured sources._",
 	} {
 		if !strings.Contains(md, want) {
 			t.Fatalf("markdown missing %q:\n%s", want, md)

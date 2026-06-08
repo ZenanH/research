@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ZenanH/research/internal/abstracts"
 	"github.com/ZenanH/research/internal/config"
 	"github.com/ZenanH/research/internal/exporter"
 	"github.com/ZenanH/research/internal/model"
@@ -75,6 +76,9 @@ func (a App) runJournal(ctx context.Context, args []string) error {
 	count := fs.Int("count", 25, "number of papers")
 	output := fs.String("output", "", "output Markdown path")
 	openAlexKey := fs.String("openalex-key", "", "OpenAlex API key")
+	requireAbstract := fs.Bool("require-abstract", false, "only export papers with OpenAlex abstracts")
+	enrichAbstracts := fs.Bool("enrich-abstracts", true, "enrich missing abstracts with Crossref and Semantic Scholar when configured")
+	semanticScholarKey := fs.String("semantic-scholar-key", "", "Semantic Scholar API key")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
@@ -101,10 +105,15 @@ func (a App) runJournal(ctx context.Context, args []string) error {
 	}
 	fmt.Fprintf(a.Stdout, "Matched: %s\n", source.DisplayName)
 	fmt.Fprintf(a.Stdout, "Fetching papers...\n")
-	papers, err := client.RecentWorks(ctx, source.ID, *count)
+	papers, err := client.SearchWorks(ctx, openalex.WorksQuery{
+		SourceID:        source.ID,
+		Count:           *count,
+		RequireAbstract: *requireAbstract && !*enrichAbstracts,
+	})
 	if err != nil {
 		return err
 	}
+	papers = a.enrichAndFilter(ctx, papers, *enrichAbstracts, *semanticScholarKey, *requireAbstract)
 	return writeResult(*output, exporter.ExportOptions{
 		Title:          fmt.Sprintf("%s: Recent %d Papers", source.DisplayName, *count),
 		Journal:        *name,
@@ -124,6 +133,9 @@ func (a App) runSearch(ctx context.Context, args []string) error {
 	keywordMode := fs.String("keyword-mode", "any", "keyword mode: any or all")
 	output := fs.String("output", "", "output Markdown path")
 	openAlexKey := fs.String("openalex-key", "", "OpenAlex API key")
+	requireAbstract := fs.Bool("require-abstract", false, "only export papers with OpenAlex abstracts")
+	enrichAbstracts := fs.Bool("enrich-abstracts", true, "enrich missing abstracts with Crossref and Semantic Scholar when configured")
+	semanticScholarKey := fs.String("semantic-scholar-key", "", "Semantic Scholar API key")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
@@ -158,14 +170,16 @@ func (a App) runSearch(ctx context.Context, args []string) error {
 	fmt.Fprintf(a.Stdout, "Matched: %s\n", source.DisplayName)
 	fmt.Fprintf(a.Stdout, "Searching papers...\n")
 	papers, err := client.SearchWorks(ctx, openalex.WorksQuery{
-		SourceID:    source.ID,
-		Count:       *count,
-		Keywords:    parsedKeywords,
-		KeywordMode: *keywordMode,
+		SourceID:        source.ID,
+		Count:           *count,
+		Keywords:        parsedKeywords,
+		KeywordMode:     *keywordMode,
+		RequireAbstract: *requireAbstract && !*enrichAbstracts,
 	})
 	if err != nil {
 		return err
 	}
+	papers = a.enrichAndFilter(ctx, papers, *enrichAbstracts, *semanticScholarKey, *requireAbstract)
 	return writeResult(*output, exporter.ExportOptions{
 		Title:          fmt.Sprintf("%s: Keyword Search (%d Papers)", source.DisplayName, *count),
 		Journal:        *journal,
@@ -176,6 +190,20 @@ func (a App) runSearch(ctx context.Context, args []string) error {
 		KeywordMode:    *keywordMode,
 		GeneratedAt:    time.Now(),
 	}, papers, a.Stdout)
+}
+
+func (a App) enrichAndFilter(ctx context.Context, papers []model.Paper, enabled bool, semanticScholarKey string, requireAbstract bool) []model.Paper {
+	if enabled {
+		fmt.Fprintf(a.Stdout, "Enriching missing abstracts...\n")
+		enricher := abstracts.NewEnricher(abstracts.Options{
+			SemanticScholarKey: firstNonEmpty(semanticScholarKey, os.Getenv(abstracts.EnvSemanticScholarAPIKey)),
+		})
+		papers = enricher.Enrich(ctx, papers)
+	}
+	if requireAbstract {
+		papers = abstracts.FilterWithAbstracts(papers)
+	}
+	return papers
 }
 
 func (a App) runSources(ctx context.Context, args []string) error {
@@ -328,6 +356,15 @@ func valueOrNA(value string) string {
 	return value
 }
 
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
 func printHelp(out io.Writer) {
 	fmt.Fprint(out, `Research
 OpenAlex journal paper exporter
@@ -343,6 +380,9 @@ Usage:
 
 Options:
   --openalex-key string  OpenAlex API key. If omitted, research checks OPENALEX_API_KEY and local config.
+  --enrich-abstracts    Enrich missing abstracts with Crossref and Semantic Scholar when configured. Enabled by default.
+  --require-abstract    Only export papers with abstracts available from configured sources.
+  --semantic-scholar-key string  Semantic Scholar API key. If omitted, research checks SEMANTIC_SCHOLAR_API_KEY.
   --version             Show version.
 `)
 }

@@ -25,8 +25,8 @@ func TestRunPromptsForOpenAlexKeyBeforeMenu(t *testing.T) {
 
 	got := out.String()
 	for _, want := range []string{
-		"OpenAlex API key required.",
-		"Enter OpenAlex API key:",
+		"OpenAlex API key required",
+		"Enter OpenAlex API key",
 		"Save this key for future runs?",
 		"Choose a workflow",
 	} {

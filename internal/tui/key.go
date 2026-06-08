@@ -9,9 +9,9 @@ import (
 
 func PromptLine(in io.Reader, out io.Writer, label string, fallback string) (string, error) {
 	if fallback != "" {
-		fmt.Fprintf(out, "%s [%s]: ", label, fallback)
+		fmt.Fprintf(out, "%s%s%s [%s]: ", bold, label, reset, fallback)
 	} else {
-		fmt.Fprintf(out, "%s: ", label)
+		fmt.Fprintf(out, "%s%s%s: ", bold, label, reset)
 	}
 	reader, ok := in.(*bufio.Reader)
 	if !ok {

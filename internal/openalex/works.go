@@ -37,10 +37,11 @@ type primaryLocation struct {
 }
 
 type WorksQuery struct {
-	SourceID    string
-	Count       int
-	Keywords    []string
-	KeywordMode string
+	SourceID        string
+	Count           int
+	Keywords        []string
+	KeywordMode     string
+	RequireAbstract bool
 }
 
 func (c *Client) RecentWorks(ctx context.Context, sourceID string, count int) ([]model.Paper, error) {
@@ -66,11 +67,19 @@ func (c *Client) fetchWorks(ctx context.Context, query WorksQuery) ([]model.Pape
 	perPage := 100
 
 	for len(papers) < query.Count && cursor != "" {
+		filters := []string{
+			"primary_location.source.id:" + normalizeOpenAlexID(query.SourceID),
+			"type:article",
+		}
+		if query.RequireAbstract {
+			filters = append(filters, "has_abstract:true")
+		}
 		params := url.Values{}
-		params.Set("filter", "primary_location.source.id:"+normalizeOpenAlexID(query.SourceID)+",type:article")
+		params.Set("filter", strings.Join(filters, ","))
 		params.Set("sort", "publication_date:desc")
 		params.Set("per-page", itoa(perPage))
 		params.Set("cursor", cursor)
+		params.Set("select", strings.Join(workSelectFields(), ","))
 		if len(query.Keywords) > 0 {
 			params.Set("search", strings.Join(query.Keywords, " "))
 		}
@@ -81,6 +90,9 @@ func (c *Client) fetchWorks(ctx context.Context, query WorksQuery) ([]model.Pape
 		}
 		for _, result := range resp.Results {
 			paper := result.toPaper()
+			if query.RequireAbstract && strings.TrimSpace(paper.Abstract) == "" {
+				continue
+			}
 			if len(query.Keywords) == 0 || matchesKeywords(paper, query.Keywords, query.KeywordMode) {
 				papers = append(papers, paper)
 				if len(papers) == query.Count {
@@ -97,6 +109,19 @@ func (c *Client) fetchWorks(ctx context.Context, query WorksQuery) ([]model.Pape
 		}
 	}
 	return papers, nil
+}
+
+func workSelectFields() []string {
+	return []string{
+		"id",
+		"doi",
+		"display_name",
+		"publication_date",
+		"abstract_inverted_index",
+		"authorships",
+		"primary_location",
+		"locations",
+	}
 }
 
 func normalizeOpenAlexID(id string) string {
@@ -116,13 +141,19 @@ func (w workResult) toPaper() model.Paper {
 			seen[name] = true
 		}
 	}
+	abstract := ReconstructAbstract(w.AbstractInvertedIndex)
+	abstractSource := model.AbstractSourceMissing
+	if strings.TrimSpace(abstract) != "" {
+		abstractSource = model.AbstractSourceOpenAlex
+	}
 	return model.Paper{
 		ID:              w.ID,
 		DOI:             w.DOI,
 		DisplayName:     w.DisplayName,
 		PublicationDate: w.PublicationDate,
 		Authors:         authors,
-		Abstract:        ReconstructAbstract(w.AbstractInvertedIndex),
+		Abstract:        abstract,
+		AbstractSource:  abstractSource,
 		LandingPageURL:  firstNonEmpty(w.PrimaryLocation.LandingPageURL, firstLocationURL(w.Locations)),
 	}
 }

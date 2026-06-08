@@ -8,6 +8,7 @@ The first MVP focuses on one reliable workflow:
 - fetch recent journal articles
 - optionally filter by keywords in title and abstract
 - rebuild OpenAlex inverted-index abstracts
+- enrich missing abstracts from Crossref, and from Semantic Scholar when configured
 - export one combined Markdown file for downstream AI literature review
 
 ## Install From Source
@@ -45,6 +46,12 @@ Config locations:
 - Linux: `~/.config/research/config.toml`
 - Windows: `%AppData%\research\config.toml`
 
+Semantic Scholar enrichment is optional. If you want `research` to use Semantic Scholar as a second abstract fallback after Crossref, set:
+
+```bash
+export SEMANTIC_SCHOLAR_API_KEY="..."
+```
+
 ## Interactive Mode
 
 ```bash
@@ -72,6 +79,37 @@ research journal \
   --name "computers and geotechnics" \
   --count 100 \
   --output ./computers_and_geotechnics_recent_100.md
+```
+
+By default, missing abstracts are enriched from Crossref. If `SEMANTIC_SCHOLAR_API_KEY` is set, Semantic Scholar is used after Crossref:
+
+```bash
+research journal \
+  --name "computers and geotechnics" \
+  --count 100 \
+  --enrich-abstracts \
+  --output ./computers_and_geotechnics_recent_100.md
+```
+
+Only export papers that have abstracts available from configured sources:
+
+```bash
+research journal \
+  --name "computers and geotechnics" \
+  --count 100 \
+  --require-abstract \
+  --output ./computers_and_geotechnics_recent_100_with_abstracts.md
+```
+
+Disable enrichment when you only want OpenAlex-native abstracts:
+
+```bash
+research journal \
+  --name "computers and geotechnics" \
+  --count 100 \
+  --enrich-abstracts=false \
+  --require-abstract \
+  --output ./openalex_abstracts_only.md
 ```
 
 Export recent papers from a journal that match any keyword:
@@ -112,6 +150,9 @@ The default output is one combined Markdown file:
 - ISSN-L: ...
 - Requested count: 100
 - Retrieved count: 100
+- Papers with abstracts: ...
+- Abstract coverage: ...
+- Abstract sources: OpenAlex 61, Crossref 22, Semantic Scholar 0, Missing 17
 - Query type: recent
 - Sort: publication_date:desc
 
@@ -128,6 +169,7 @@ The default output is one combined Markdown file:
 - Authors: ...
 - DOI: ...
 - OpenAlex: ...
+- Abstract source: OpenAlex
 - Publisher page: ...
 
 #### Abstract
@@ -135,11 +177,13 @@ The default output is one combined Markdown file:
 ...
 ```
 
-If OpenAlex does not provide an abstract, the exporter writes:
+If configured sources do not provide an abstract, the exporter writes:
 
 ```md
-_No abstract available from OpenAlex._
+_No abstract available from configured sources._
 ```
+
+OpenAlex does not have abstracts for every paper. The Markdown metadata includes `Papers with abstracts`, `Abstract coverage`, and `Abstract sources` so you can quickly judge whether an export is suitable for AI-assisted reading. Use `--require-abstract` when you want the CLI to skip papers without abstracts from configured sources and continue paging until it collects the requested count or OpenAlex has no more matching results.
 
 ## Development
 
@@ -195,6 +239,6 @@ HOMEBREW_TAP_GITHUB_TOKEN
 After that, push a tag to publish:
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.2.0
+git push origin v0.2.0
 ```

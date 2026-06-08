@@ -26,14 +26,13 @@ func Run(ctx context.Context, opts Options) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintln(opts.Out, "\033[1mResearch\033[0m")
-	fmt.Fprintln(opts.Out, "OpenAlex journal paper exporter")
-	fmt.Fprintln(opts.Out)
+	screen(opts.Out, "Research", "OpenAlex journal paper exporter")
 
 	key := config.ResolveOpenAlexKey("", cfg)
 	if key == "" {
-		fmt.Fprintln(opts.Out, "OpenAlex API key required.")
-		fmt.Fprintln(opts.Out, "Get a free key at https://openalex.org/settings/api")
+		screen(opts.Out, "OpenAlex API key required", "OpenAlex is free, but current API access requires a free API key.")
+		fmt.Fprintln(opts.Out, "Get one at: https://openalex.org/settings/api")
+		fmt.Fprintln(opts.Out)
 		key, err = PromptSecret(opts.In, opts.Out, "Enter OpenAlex API key")
 		if err != nil {
 			return err
@@ -51,12 +50,13 @@ func Run(ctx context.Context, opts Options) error {
 			if _, err := config.Save(cfg); err != nil {
 				return err
 			}
-			fmt.Fprintf(opts.Out, "Saved key to %s\n\n", path)
+			status(opts.Out, "Saved key to "+path)
 		}
 	}
 
 	for {
-		fmt.Fprintln(opts.Out, "Choose a workflow")
+		screen(opts.Out, "Research", "OpenAlex journal paper exporter")
+		fmt.Fprintf(opts.Out, "%sChoose a workflow%s\n", bold, reset)
 		fmt.Fprintln(opts.Out, "  1. Recent papers from journal")
 		fmt.Fprintln(opts.Out, "  2. Keyword search in journal")
 		fmt.Fprintln(opts.Out, "  3. Settings")
@@ -71,14 +71,17 @@ func Run(ctx context.Context, opts Options) error {
 		case "2":
 			return RunSearch(ctx, opts, key)
 		case "3":
+			screen(opts.Out, "Settings", "Local configuration")
 			fmt.Fprintf(opts.Out, "Config path: %s\n", path)
 			fmt.Fprintf(opts.Out, "OpenAlex API key: %s\n", maskedKey(cfg.OpenAlexAPIKey))
 			fmt.Fprintf(opts.Out, "Default output dir: %s\n", cfg.DefaultDir)
 			fmt.Fprintf(opts.Out, "Export mode: %s\n\n", cfg.ExportMode)
+			_, _ = PromptLine(opts.In, opts.Out, "Press Enter to return", "")
 		case "4", "q", "quit", "exit":
+			clear(opts.Out)
 			return nil
 		default:
-			fmt.Fprintln(opts.Out, "Please choose 1, 2, 3, or 4.")
+			note(opts.Out, "Please choose 1, 2, 3, or 4.")
 		}
 	}
 }

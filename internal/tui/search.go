@@ -3,16 +3,17 @@ package tui
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
+	"github.com/ZenanH/research/internal/abstracts"
 	"github.com/ZenanH/research/internal/exporter"
 	"github.com/ZenanH/research/internal/openalex"
 )
 
 func RunSearch(ctx context.Context, opts Options, key string) error {
-	fmt.Fprintln(opts.Out)
-	fmt.Fprintln(opts.Out, "\033[1mKeyword search in journal\033[0m")
+	screen(opts.Out, "Keyword Search", "Export recent journal articles matching title or abstract keywords")
 	journal, err := PromptLine(opts.In, opts.Out, "Journal name", "Computers and Geotechnics")
 	if err != nil {
 		return err
@@ -38,13 +39,22 @@ func RunSearch(ctx context.Context, opts Options, key string) error {
 	if mode != "any" && mode != "all" {
 		mode = "any"
 	}
+	enrichAbstracts, err := PromptYesNo(opts.In, opts.Out, "Enrich missing abstracts?", true)
+	if err != nil {
+		return err
+	}
+	requireAbstract, err := PromptYesNo(opts.In, opts.Out, "Only include papers with abstracts?", false)
+	if err != nil {
+		return err
+	}
 	output, err := PromptLine(opts.In, opts.Out, "Output path", defaultOutput(journal, "keywords"))
 	if err != nil {
 		return err
 	}
 
 	client := openalex.NewClient(key)
-	fmt.Fprintln(opts.Out, "Resolving journal...")
+	screen(opts.Out, "Keyword Search", "Resolving journal")
+	status(opts.Out, "Resolving journal...")
 	sources, err := client.SearchSources(ctx, journal, 5)
 	if err != nil {
 		return err
@@ -54,7 +64,7 @@ func RunSearch(ctx context.Context, opts Options, key string) error {
 	}
 	sourceIndex := 0
 	if len(sources) > 1 {
-		fmt.Fprintln(opts.Out, "Source candidates:")
+		screen(opts.Out, "Choose Source", "Multiple OpenAlex source candidates were found")
 		for i, source := range sources {
 			fmt.Fprintf(opts.Out, "  %d. %s | ISSN-L: %s | Works: %d | %s\n", i+1, source.DisplayName, valueOrNA(source.ISSNL), source.WorksCount, source.ID)
 		}
@@ -68,18 +78,30 @@ func RunSearch(ctx context.Context, opts Options, key string) error {
 		}
 	}
 	source := sources[sourceIndex]
-	fmt.Fprintf(opts.Out, "Matched: %s\n", source.DisplayName)
-	fmt.Fprintf(opts.Out, "Searching papers...\n")
+	screen(opts.Out, "Keyword Search", "Searching papers")
+	status(opts.Out, "Matched: "+source.DisplayName)
+	status(opts.Out, "Searching papers...")
 	papers, err := client.SearchWorks(ctx, openalex.WorksQuery{
-		SourceID:    source.ID,
-		Count:       count,
-		Keywords:    keywords,
-		KeywordMode: mode,
+		SourceID:        source.ID,
+		Count:           count,
+		Keywords:        keywords,
+		KeywordMode:     mode,
+		RequireAbstract: requireAbstract && !enrichAbstracts,
 	})
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(opts.Out, "Writing Markdown...\n")
+	if enrichAbstracts {
+		status(opts.Out, "Enriching missing abstracts...")
+		enricher := abstracts.NewEnricher(abstracts.Options{
+			SemanticScholarKey: os.Getenv(abstracts.EnvSemanticScholarAPIKey),
+		})
+		papers = enricher.Enrich(ctx, papers)
+	}
+	if requireAbstract {
+		papers = abstracts.FilterWithAbstracts(papers)
+	}
+	status(opts.Out, "Writing Markdown...")
 	if err := exporter.WriteCombined(output, exporter.ExportOptions{
 		Title:          fmt.Sprintf("%s: Keyword Search (%d Papers)", source.DisplayName, count),
 		Journal:        journal,
@@ -92,7 +114,7 @@ func RunSearch(ctx context.Context, opts Options, key string) error {
 	}, papers); err != nil {
 		return err
 	}
-	fmt.Fprintf(opts.Out, "Done. Retrieved %d papers: %s\n", len(papers), output)
+	status(opts.Out, fmt.Sprintf("Done. Retrieved %d papers: %s", len(papers), output))
 	return nil
 }
 
